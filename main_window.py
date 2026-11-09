@@ -3,6 +3,8 @@
 import os
 import threading
 
+import cv2
+
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QColor
 from PySide6.QtWidgets import (
@@ -244,9 +246,13 @@ class MainWindow(QMainWindow):
         x = max(0, min(x, self.reader.w - 1)); y = max(0, min(y, self.reader.h - 1))
         x2 = min(self.reader.w, x + w); y2 = min(self.reader.h, y + h)
         crop = frame[y:y2, x:x2] if (x2 > x and y2 > y) else frame
-        pm = QPixmap.fromImage(bgr_to_qimage(crop))
-        self.preview.setPixmap(pm.scaled(self.preview.size(), Qt.KeepAspectRatio,
-                                         Qt.SmoothTransformation))
+        # 先缩放到预览尺寸再转 QImage，避免对整幅裁剪大图做转换
+        pw, ph = self.preview.width(), self.preview.height()
+        if pw > 0 and ph > 0 and (crop.shape[1] > pw or crop.shape[0] > ph):
+            s = min(pw / crop.shape[1], ph / crop.shape[0])
+            crop = cv2.resize(crop, (int(crop.shape[1] * s), int(crop.shape[0] * s)),
+                              interpolation=cv2.INTER_AREA)
+        self.preview.setPixmap(QPixmap.fromImage(bgr_to_qimage(crop)))
 
     def _preview_blank(self):
         self.preview.setPixmap(QPixmap())

@@ -42,6 +42,12 @@ class VideoView(QWidget):
             self._src_w = self._src_h = 0
         else:
             self._src_h, self._src_w = bgr.shape[:2]
+            # 显示前降采样（原图可能 1080p+，整幅转 QImage 会卡顿）
+            cap = 1280
+            if max(self._src_w, self._src_h) > cap:
+                s = cap / max(self._src_w, self._src_h)
+                bgr = cv2.resize(bgr, (int(round(self._src_w * s)), int(round(self._src_h * s))),
+                                 interpolation=cv2.INTER_AREA)
             self._pixmap = QPixmap.fromImage(bgr_to_qimage(bgr))
         self.update()
 
@@ -79,7 +85,9 @@ class VideoView(QWidget):
         s, ox, oy = self._scale_offsets()
         sw = self._src_w * s
         sh = self._src_h * s
-        p.drawPixmap(QRectF(ox, oy, sw, sh), self._pixmap, QRectF(0, 0, self._src_w, self._src_h))
+        pw = self._pixmap.width()
+        ph = self._pixmap.height()
+        p.drawPixmap(QRectF(ox, oy, sw, sh), self._pixmap, QRectF(0, 0, pw, ph))
 
         if self._box is None:
             return

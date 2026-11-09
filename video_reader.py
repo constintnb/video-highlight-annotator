@@ -34,7 +34,7 @@ class VideoReader:
             return None
         self._pos = n
         self._cache[n] = frame
-        if len(self._cache) > 80:
+        if len(self._cache) > 16:
             self._cache.pop(next(iter(self._cache)))
         return frame
 
