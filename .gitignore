@@ -25,3 +25,6 @@ annotations.jsonl
 .idea/
 .DS_Store
 Thumbs.db
+
+# 本地启动脚本（含本机绝对路径，不入库）
+*.bat

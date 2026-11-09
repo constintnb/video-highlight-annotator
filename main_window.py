@@ -103,15 +103,17 @@ class MainWindow(QMainWindow):
 
         # 底部按钮
         btns = QHBoxLayout()
+        self.btn_play = QPushButton("▶ 播放")
         self.btn_mark = QPushButton("标记高光(起点)")
         self.btn_add_kf = QPushButton("添加关键帧")
         self.btn_del_kf = QPushButton("删除关键帧")
         self.btn_undo = QPushButton("撤销标记")
         self.btn_prev = QPushButton("上一个")
         self.btn_next = QPushButton("下一个")
-        for b in (self.btn_mark, self.btn_add_kf, self.btn_del_kf, self.btn_undo,
-                  self.btn_prev, self.btn_next):
+        for b in (self.btn_play, self.btn_mark, self.btn_add_kf, self.btn_del_kf,
+                  self.btn_undo, self.btn_prev, self.btn_next):
             b.setMinimumHeight(30)
+        btns.addWidget(self.btn_play)
         btns.addWidget(self.btn_mark)
         btns.addWidget(self.btn_add_kf)
         btns.addWidget(self.btn_del_kf)
@@ -137,6 +139,7 @@ class MainWindow(QMainWindow):
 
     def _connect(self):
         self.btn_save.clicked.connect(self.save_and_next)
+        self.btn_play.clicked.connect(self.toggle_play)
         self.btn_mark.clicked.connect(self.toggle_mark)
         self.btn_add_kf.clicked.connect(self.add_keyframe)
         self.btn_del_kf.clicked.connect(self.del_keyframe)
@@ -285,11 +288,19 @@ class MainWindow(QMainWindow):
             interval = max(12, int(round(1000.0 / self.reader.fps)))
             self._timer.start(interval)
             self._playing = True
+        self._update_play_btn()
+
+    def _update_play_btn(self):
+        if self._playing:
+            self.btn_play.setText("■ 暂停")
+        else:
+            self.btn_play.setText("▶ 播放")
 
     def _tick(self):
         if self.playhead >= self.reader.total - 1:
             self._timer.stop()
             self._playing = False
+            self._update_play_btn()
             return
         self.playhead += 1
         self.refresh()
