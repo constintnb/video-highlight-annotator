@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+
+# 虚拟环境
+venv/
+.venv/
+env/
+
+# 本地配置与测试产物
+config.json
+_tmp/
+annotations.jsonl
+
+# 视频 / 输出（避免误提交大文件）
+*.mp4
+*.mov
+*.mkv
+*.avi
+
+# IDE / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
