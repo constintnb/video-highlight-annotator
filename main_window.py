@@ -109,7 +109,7 @@ class MainWindow(QMainWindow):
         self.btn_mark = QPushButton("标记高光(起点)")
         self.btn_add_kf = QPushButton("添加关键帧")
         self.btn_del_kf = QPushButton("删除关键帧")
-        self.btn_undo = QPushButton("撤销标记")
+        self.btn_undo = QPushButton("撤销高光")
         self.btn_prev = QPushButton("上一个")
         self.btn_next = QPushButton("下一个")
         for b in (self.btn_play, self.btn_mark, self.btn_add_kf, self.btn_del_kf,
@@ -336,7 +336,11 @@ class MainWindow(QMainWindow):
         if self.open_start is not None:
             self.open_start = None
         elif self.segments:
-            self.segments.pop()
+            seg = self._segment_at(self.playhead)
+            if seg is not None:
+                self.segments.remove(seg)   # 删播放头所在的那段
+            else:
+                self.segments.pop()          # 播放头不在任何段内 -> 删最后一段
             self.selected = -1
         self._update_mark_btn()
         self._refresh_timeline()
