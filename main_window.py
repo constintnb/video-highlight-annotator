@@ -9,7 +9,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QPixmap, QKeySequence, QShortcut, QColor
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QLabel, QPushButton, QHBoxLayout, QVBoxLayout,
-    QMessageBox, QProgressDialog, QSizePolicy, QFrame,
+    QMessageBox, QProgressDialog, QSizePolicy, QFrame, QListWidget, QListWidgetItem,
 )
 
 from video_reader import VideoReader
@@ -90,8 +90,11 @@ class MainWindow(QMainWindow):
         top.addWidget(self.btn_save)
         root.addLayout(top)
 
-        # 中部：左视频 + 右预览
+        # 中部：左侧视频列表 + 视频 + 预览
         mid = QHBoxLayout()
+        self.sidebar = QListWidget()
+        self.sidebar.setFixedWidth(150)
+        self.sidebar.setStyleSheet("background:#1b1d20; color:#ddd; font-size:14px;")
         self.video_view = VideoView()
         self.video_view.setMinimumSize(420, 480)
         self.video_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
@@ -99,6 +102,7 @@ class MainWindow(QMainWindow):
         self.preview.setAlignment(Qt.AlignCenter)
         self.preview.setStyleSheet("background:#0f1012; color:#777; font-size:16px;")
         self.preview.setMinimumSize(260, 480)
+        mid.addWidget(self.sidebar)
         mid.addWidget(self.video_view, 1)
         mid.addWidget(self.preview, 0)
         root.addLayout(mid, 1)
@@ -151,6 +155,7 @@ class MainWindow(QMainWindow):
         self.timeline.seekRequested.connect(self.on_seek)
         self.timeline.segmentClicked.connect(self.on_segment_clicked)
         self.video_view.boxChanged.connect(self.on_box_changed)
+        self.sidebar.itemClicked.connect(self.on_sidebar_clicked)
 
     # ---------------- 载入视频 ----------------
     def _first_unannotated(self):
@@ -159,6 +164,29 @@ class MainWindow(QMainWindow):
             if not os.path.exists(os.path.join(out, f"{vid}.json")):
                 return i
         return 0
+
+    # ---------------- 侧边栏（视频列表） ----------------
+    def _populate_sidebar(self):
+        self.sidebar.clear()
+        for vid, fn, path in self.video_list:
+            done = os.path.exists(os.path.join(self.cfg.out_dir, f"{vid}.json"))
+            item = QListWidgetItem(("✓ " if done else "") + str(vid))
+            item.setToolTip(fn)
+            item.setData(Qt.UserRole, vid)
+            self.sidebar.addItem(item)
+
+    def _select_sidebar_row(self):
+        for i in range(self.sidebar.count()):
+            if self.sidebar.item(i).data(Qt.UserRole) == self.vid:
+                self.sidebar.setCurrentItem(self.sidebar.item(i))
+                break
+
+    def on_sidebar_clicked(self, item):
+        vid = item.data(Qt.UserRole)
+        for i, (v, fn, path) in enumerate(self.video_list):
+            if v == vid:
+                self.load_video(i)
+                break
 
     def load_video(self, index):
         if self.reader:
@@ -199,6 +227,8 @@ class MainWindow(QMainWindow):
         self._set_preview_size()
         self.playhead = 0
         self.refresh()
+        self._populate_sidebar()
+        self._select_sidebar_row()
 
     def _set_preview_size(self):
         pw = int(360 * self.rw / self.rh)
