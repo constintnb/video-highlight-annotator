@@ -18,6 +18,7 @@ from video_reader import VideoReader
 from widgets import VideoView, TimelineView, bgr_to_qimage
 from model import (
     Segment, Keyframe, interp_box, box_height, default_keyframe,
+    move_segment, resize_segment,
     predictions_to_model, saved_predictions_to_model, segments_to_predictions,
 )
 from config import load_ratio, load_saved_annotation
@@ -108,18 +109,16 @@ class MainWindow(QMainWindow):
         self.btn_add_kf = QPushButton("添加关键帧")
         self.btn_del_kf = QPushButton("删除关键帧")
         self.btn_undo = QPushButton("撤销高光")
-        self.btn_clear = QPushButton("清空标注")
         self.btn_prev = QPushButton("上一个")
         self.btn_next = QPushButton("下一个")
         for b in (self.btn_play, self.btn_mark, self.btn_add_kf, self.btn_del_kf,
-                  self.btn_undo, self.btn_clear, self.btn_prev, self.btn_next):
+                  self.btn_undo, self.btn_prev, self.btn_next):
             b.setMinimumHeight(30)
         btns.addWidget(self.btn_play)
         btns.addWidget(self.btn_mark)
         btns.addWidget(self.btn_add_kf)
         btns.addWidget(self.btn_del_kf)
         btns.addWidget(self.btn_undo)
-        btns.addWidget(self.btn_clear)
         btns.addStretch(1)
         btns.addWidget(self.btn_prev)
         btns.addWidget(self.btn_next)
@@ -146,11 +145,12 @@ class MainWindow(QMainWindow):
         self.btn_add_kf.clicked.connect(self.add_keyframe)
         self.btn_del_kf.clicked.connect(self.del_keyframe)
         self.btn_undo.clicked.connect(self.undo_mark)
-        self.btn_clear.clicked.connect(self.clear_annotations)
         self.btn_prev.clicked.connect(lambda: self.load_video(self.index - 1))
         self.btn_next.clicked.connect(lambda: self.load_video(self.index + 1))
         self.timeline.seekRequested.connect(self.on_seek)
         self.timeline.segmentClicked.connect(self.on_segment_clicked)
+        self.timeline.segmentDragStarted.connect(self.on_segment_drag_started)
+        self.timeline.segmentEdited.connect(self.on_segment_edited)
         self.video_view.boxChanged.connect(self.on_box_changed)
         self.sidebar.itemClicked.connect(self.on_sidebar_clicked)
 
@@ -213,6 +213,7 @@ class MainWindow(QMainWindow):
 
         self.rw, self.rh = rw, rh
         self.video_view.set_ratio(rw, rh)
+        self.timeline.reset_interaction()
         self.segments = segments
         self.open_start = None
         self.selected = 0 if saved is not None and segments else -1
@@ -260,10 +261,7 @@ class MainWindow(QMainWindow):
             self.video_view.interactive = False
             self._preview_blank()
 
-        seg_ranges = [(s.start, s.end) for s in self.segments]
-        kf_frames = [k.frame for s in self.segments for k in s.keyframes]
-        self.timeline.set_data(self.reader.total, self.reader.fps, seg_ranges,
-                               kf_frames, self.playhead, self.selected)
+        self._refresh_timeline()
         self._update_mark_btn()
 
     def _update_preview(self, frame, x, y, w, h):
@@ -283,7 +281,6 @@ class MainWindow(QMainWindow):
         self.preview.setText("非高光片段")
 
     def _update_mark_btn(self):
-        self.btn_clear.setEnabled(bool(self.segments) or self.open_start is not None)
         if self.open_start is None:
             self.btn_mark.setText("标记高光(起点)")
         else:
@@ -303,6 +300,22 @@ class MainWindow(QMainWindow):
     def on_segment_clicked(self, idx):
         self.selected = idx
         self._refresh_timeline()
+
+    def on_segment_drag_started(self):
+        if self._playing:
+            self.toggle_play()
+
+    def on_segment_edited(self, index, mode, start, end, playhead):
+        if self._prog is not None or not self.reader or not 0 <= index < len(self.segments):
+            return
+        segment = self.segments[index]
+        if mode == "move":
+            self.segments[index] = move_segment(segment, start)
+        else:
+            self.segments[index] = resize_segment(segment, start, end)
+        self.selected = index
+        self.playhead = playhead
+        self.refresh()
 
     def step(self, d):
         if self.reader:
@@ -369,25 +382,6 @@ class MainWindow(QMainWindow):
             self.selected = -1
         self._update_mark_btn()
         self._refresh_timeline()
-        self.refresh()
-
-    def clear_annotations(self):
-        if not self.reader or self._prog is not None:
-            return
-        ret = QMessageBox.question(
-            self, "清空标注",
-            "清空当前视频的所有高光和裁剪关键帧？\n重新保存时将覆盖该视频的已有标注。",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No,
-        )
-        if ret != QMessageBox.StandardButton.Yes:
-            return
-        if self._playing:
-            self.toggle_play()
-        self.segments = []
-        self.open_start = None
-        self.selected = -1
-        self.playhead = 0
         self.refresh()
 
     def on_box_changed(self, x, y, w):

@@ -6,7 +6,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from model import (
     Keyframe, Segment, interp_box, box_height, default_keyframe,
-    clamp_box, predictions_to_model, saved_predictions_to_model, segments_to_predictions,
+    clamp_box, resize_segment, predictions_to_model, saved_predictions_to_model, segments_to_predictions,
 )
 from config import load_ratio, load_prefill, load_saved_annotation
 
@@ -64,6 +64,14 @@ restored = saved_predictions_to_model(saved_preds)
 check("saved segment ranges", [(s.start, s.end) for s in restored] == [(1, 25), (27, 28), (28, 28)])
 check("saved bbox roundtrip", segments_to_predictions(restored, 9, 16) == saved_preds)
 check("fixed box has one keyframe", len(restored[1].keyframes) == 1)
+
+# 裁掉插值端点时仍精确保留逐帧框，包括只剩一帧的片段。
+clip = Segment(0, 10, [Keyframe(0, 0, 0, 20), Keyframe(5, 2, 0, 20), Keyframe(10, 0, 0, 20)])
+clip_preds = segments_to_predictions([clip], 16, 9)
+trimmed = resize_segment(clip, 1, 9)
+check("trim preserves rounded crops", segments_to_predictions([trimmed], 16, 9) == clip_preds[1:10])
+check("trim keeps interior keyframe", clip.keyframes[1] in trimmed.keyframes)
+check("trim to one frame", segments_to_predictions([resize_segment(clip, 4, 4)], 16, 9) == clip_preds[4:5])
 
 # 7. 官方比例、预填和保存结果使用临时文件自测
 tmp_root = Path(__file__).resolve().parent / "_tmp"
