@@ -121,6 +121,45 @@ def predictions_to_model(preds, gap=2, max_kf=20):
     return segs
 
 
+def _restore_segment(boxes):
+    """仅移除可由现有插值规则精确重建的逐帧裁剪框。"""
+    keyframes = [boxes[0]]
+    spans = [(0, len(boxes) - 1)]
+    while spans:
+        start, end = spans.pop()
+        if start == end:
+            continue
+        endpoints = (boxes[start], boxes[end])
+        if all(interp_box(endpoints, k.frame) == (k.x, k.y, k.w)
+               for k in boxes[start + 1:end]):
+            keyframes.append(boxes[end])
+        else:
+            mid = (start + end) // 2
+            spans.extend(((mid, end), (start, mid)))
+
+    # 末关键帧之后本来就保持位置，重复的末帧可以省去。
+    if len(keyframes) > 1:
+        prev, last = keyframes[-2:]
+        if (prev.x, prev.y, prev.w) == (last.x, last.y, last.w):
+            keyframes.pop()
+    return Segment(boxes[0].frame, boxes[-1].frame, keyframes)
+
+
+def saved_predictions_to_model(preds):
+    """按导出的帧顺序恢复高光段，保留缺帧和重叠段的记录。"""
+    segments = []
+    boxes = []
+    for pred in preds:
+        frame = pred["frame"]
+        if boxes and frame != boxes[-1].frame + 1:
+            segments.append(_restore_segment(boxes))
+            boxes = []
+        boxes.append(Keyframe(frame, *pred["bboxes"]))
+    if boxes:
+        segments.append(_restore_segment(boxes))
+    return segments
+
+
 def segments_to_predictions(segments, rw, rh):
     """把 [Segment...] 展开为官方格式 predictions（每帧一个 bbox）。"""
     preds = []
