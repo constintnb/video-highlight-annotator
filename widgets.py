@@ -59,6 +59,9 @@ class VideoView(QWidget):
         self.rw, self.rh = rw, rh
         self.update()
 
+    def reset_interaction(self):
+        self._mode = None
+
     # ---- 坐标换算 ----
     def _scale_offsets(self):
         w = self.width(); h = self.height()

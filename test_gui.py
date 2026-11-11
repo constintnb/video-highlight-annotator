@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""离屏集成测试：恢复已有标注、拖动片段并重新导出。"""
+"""离屏集成测试：恢复、拖动、撤回并重新导出已有标注。"""
 import json
 import os
 import shutil
@@ -49,6 +49,10 @@ def drag_segment(timeline, index, mode, frames):
     rect = timeline._segment_rect(s, e)
     x = {"start": rect.left() + 2, "end": rect.right() - 2, "move": rect.center().x()}[mode]
     drag_timeline(timeline, x, x + timeline._x(frames) - timeline._x(0), round(rect.center().y()))
+
+
+def press_undo(win):
+    QTest.keyClick(win, Qt.Key_Z, Qt.ControlModifier)
 
 
 def check_edit_saved_annotations(tmp):
@@ -108,6 +112,26 @@ def check_edit_saved_annotations(tmp):
         assert segments_to_predictions(win.segments, win.rw, win.rh) == original
 
         timeline = win.timeline
+        win.on_seek(2)
+        win.btn_mark.click()
+        win.on_seek(6)
+        win.btn_mark.click()
+        assert timeline.segments == [(2, 6), (10, 40), (42, 45)]
+        press_undo(win)
+        assert win.open_start == 2 and timeline.segments == [(10, 40), (42, 45)]
+        press_undo(win)
+        assert win.open_start is None
+
+        win.on_seek(43)
+        win.btn_add_kf.click()
+        assert [k.frame for k in win.segments[1].keyframes] == [42, 43]
+        win.btn_del_kf.click()
+        assert [k.frame for k in win.segments[1].keyframes] == [42]
+        press_undo(win)
+        assert [k.frame for k in win.segments[1].keyframes] == [42, 43]
+        press_undo(win)
+        assert [k.frame for k in win.segments[1].keyframes] == [42]
+
         _, _, bar_y, _ = timeline._bar()
         drag_timeline(timeline, timeline._x(2), timeline._x(18), bar_y - 6)
         assert win.playhead == 18 and timeline.segments == [(10, 40), (42, 45)]
@@ -115,6 +139,11 @@ def check_edit_saved_annotations(tmp):
         win.toggle_play()
         drag_segment(timeline, 0, "start", 1)
         assert not win._playing and win.playhead == 11
+        win.on_seek(20)
+        press_undo(win)
+        assert win.playhead == 10 and timeline.segments == [(10, 40), (42, 45)]
+        assert segments_to_predictions(win.segments, win.rw, win.rh) == original
+        drag_segment(timeline, 0, "start", 1)
         drag_segment(timeline, 0, "end", -4)
         assert win.playhead == 36 and timeline.segments == [(11, 36), (42, 45)]
         retained = [p for p in original if 11 <= p["frame"] <= 36]
@@ -137,7 +166,19 @@ def check_edit_saved_annotations(tmp):
 
         win.on_seek(57)
         win.btn_undo.click()
+        assert timeline.segments == [(0, 30)]
+        press_undo(win)
+        assert timeline.segments == [(0, 30), (56, 59)]
+        press_undo(win)
+        assert timeline.segments == [(0, 30), (42, 45)]
+        win.on_seek(43)
+        win.btn_undo.click()
         win.on_seek(0)
+        before_crop = segments_to_predictions(win.segments, win.rw, win.rh)
+        win.video_view.boxChanged.emit(4, 20, 40)
+        win.video_view.boxChanged.emit(4, 20, 40)
+        press_undo(win)
+        assert segments_to_predictions(win.segments, win.rw, win.rh) == before_crop
         win.video_view.boxChanged.emit(4, 20, 40)
         edited = segments_to_predictions(win.segments, win.rw, win.rh)
         assert edited[0]["bboxes"] == [4, 20, 40]
@@ -145,6 +186,8 @@ def check_edit_saved_annotations(tmp):
 
         save_and_wait(win)
         assert win.vid == 1
+        press_undo(win)
+        assert not win.segments and win.open_start is None
         saved = load_saved_annotation(output, 0)
         assert saved["predictions"] == edited
         assert [json.loads(line) for line in summary.read_text(encoding="utf-8").splitlines()] == [
@@ -153,8 +196,9 @@ def check_edit_saved_annotations(tmp):
         assert (output / "0.mp4").stat().st_size > 0
 
         win.sidebar.itemClicked.emit(win.sidebar.item(0))
+        press_undo(win)
         assert segments_to_predictions(win.segments, win.rw, win.rh) == edited
-        print("LOAD_DRAG_EDIT_RESAVE_OK")
+        print("LOAD_DRAG_UNDO_RESAVE_OK")
     finally:
         if win.reader:
             win.reader.release()

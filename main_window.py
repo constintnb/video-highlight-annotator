@@ -42,6 +42,7 @@ class MainWindow(QMainWindow):
         self.open_start = None
         self.playhead = 0
         self.selected = -1
+        self._undo_history = []
 
         self._playing = False
         self._prog = None
@@ -137,6 +138,9 @@ class MainWindow(QMainWindow):
         sc_left.activated.connect(lambda: self.step(-1))
         sc_right = QShortcut(QKeySequence(Qt.Key_Right), self)
         sc_right.activated.connect(lambda: self.step(1))
+        sc_undo = QShortcut(QKeySequence(QKeySequence.StandardKey.Undo), self)
+        sc_undo.setAutoRepeat(False)
+        sc_undo.activated.connect(self.undo_edit)
 
     def _connect(self):
         self.btn_save.clicked.connect(self.save_and_next)
@@ -214,6 +218,7 @@ class MainWindow(QMainWindow):
         self.rw, self.rh = rw, rh
         self.video_view.set_ratio(rw, rh)
         self.timeline.reset_interaction()
+        self._undo_history.clear()
         self.segments = segments
         self.open_start = None
         self.selected = 0 if saved is not None and segments else -1
@@ -309,6 +314,9 @@ class MainWindow(QMainWindow):
         if self._prog is not None or not self.reader or not 0 <= index < len(self.segments):
             return
         segment = self.segments[index]
+        if (start, end) == (segment.start, segment.end):
+            return
+        self._remember_edit()
         if mode == "move":
             self.segments[index] = move_segment(segment, start)
         else:
@@ -350,15 +358,29 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     # ---------------- 打标 ----------------
+    def _remember_edit(self):
+        self._undo_history.append((deepcopy(self.segments), self.open_start, self.playhead, self.selected))
+
+    def undo_edit(self):
+        if not self.reader or self._prog is not None or not self._undo_history:
+            return
+        if self._playing:
+            self.toggle_play()
+        self.timeline.reset_interaction()
+        self.video_view.reset_interaction()
+        self.segments, self.open_start, self.playhead, self.selected = self._undo_history.pop()
+        self.refresh()
+
     def toggle_mark(self):
         if not self.reader:
             return
+        if self.open_start is not None and self.playhead <= self.open_start:
+            QMessageBox.warning(self, "提示", "终点必须在起点之后。")
+            return
+        self._remember_edit()
         if self.open_start is None:
             self.open_start = self.playhead
         else:
-            if self.playhead <= self.open_start:
-                QMessageBox.warning(self, "提示", "终点必须在起点之后。")
-                return
             seg = Segment(self.open_start, self.playhead,
                           [default_keyframe(self.open_start, self.reader.w,
                                             self.reader.h, self.rw, self.rh)])
@@ -371,9 +393,12 @@ class MainWindow(QMainWindow):
         self.refresh()
 
     def undo_mark(self):
+        if self.open_start is None and not self.segments:
+            return
+        self._remember_edit()
         if self.open_start is not None:
             self.open_start = None
-        elif self.segments:
+        else:
             seg = self._segment_at(self.playhead)
             if seg is not None:
                 self.segments.remove(seg)   # 删播放头所在的那段
@@ -388,15 +413,16 @@ class MainWindow(QMainWindow):
         seg = self._segment_at(self.playhead)
         if seg is None:
             return
-        updated = False
-        for k in seg.keyframes:
-            if k.frame == self.playhead:
-                k.x, k.y, k.w = int(x), int(y), int(w)
-                updated = True
-                break
-        if not updated:
-            seg.keyframes.append(Keyframe(self.playhead, int(x), int(y), int(w)))
+        box = (int(x), int(y), int(w))
+        keyframe = next((k for k in seg.keyframes if k.frame == self.playhead), None)
+        if keyframe is not None and (keyframe.x, keyframe.y, keyframe.w) == box:
+            return
+        self._remember_edit()
+        if keyframe is None:
+            seg.keyframes.append(Keyframe(self.playhead, *box))
             seg.keyframes.sort(key=lambda k: k.frame)
+        else:
+            keyframe.x, keyframe.y, keyframe.w = box
         self._refresh_timeline()
 
     def add_keyframe(self):
@@ -423,6 +449,7 @@ class MainWindow(QMainWindow):
         if abs(nearest.frame - self.playhead) > 3:
             QMessageBox.warning(self, "提示", "当前播放头附近没有关键帧可删。")
             return
+        self._remember_edit()
         seg.keyframes.remove(nearest)
         self._refresh_timeline()
         self.refresh()
@@ -486,6 +513,7 @@ class MainWindow(QMainWindow):
     def _on_done(self, out_mp4):
         self._prog.close()
         self._prog = None
+        self._undo_history.clear()
         self.btn_save.setEnabled(True)
         if self.index + 1 < len(self.video_list):
             self.load_video(self.index + 1)
@@ -502,6 +530,7 @@ class MainWindow(QMainWindow):
     def reload(self, cfg, video_list, prefill):
         if self._playing:
             self.toggle_play()
+        self._undo_history.clear()
         if self.reader:
             self.reader.release()
             self.reader = None
